@@ -1,0 +1,13 @@
+app.c:11:6:blink	16	static
+app.c:14:6:HAL_TIM_PeriodElapsedCallback	16	static
+app.c:15:6:HAL_TIM_PeriodElapsedHalfCpltCallback	16	static
+app.c:16:6:HAL_TIM_OC_DelayElapsedCallback	16	static
+app.c:17:6:HAL_TIM_IC_CaptureCallback	16	static
+app.c:18:6:HAL_TIM_IC_CaptureHalfCpltCallback	16	static
+app.c:19:6:HAL_TIM_PWM_PulseFinishedCallback	16	static
+app.c:20:6:HAL_TIM_PWM_PulseFinishedHalfCpltCallback	16	static
+app.c:21:6:HAL_TIM_TriggerCallback	16	static
+app.c:22:6:HAL_TIM_TriggerHalfCpltCallback	16	static
+app.c:23:6:HAL_TIM_ErrorCallback	16	static
+app.c:35:6:Setup	8	static
+app.c:54:6:Loop	56	static

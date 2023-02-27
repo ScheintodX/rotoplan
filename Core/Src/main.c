@@ -115,6 +115,10 @@ int main(void)
     /* USER CODE BEGIN 3 */
 
 	Loop();
+        /*
+	char ch = '*';
+	HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 100);
+        */
   }
   /* USER CODE END 3 */
 }
@@ -270,11 +274,12 @@ static void MX_TIM1_Init(void)
   {
     Error_Handler();
   }
-  sConfigOC.Pulse = 0;
+  sConfigOC.Pulse = 100;
   if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
   }
+  sConfigOC.Pulse = 700;
   if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
   {
     Error_Handler();
@@ -316,9 +321,9 @@ static void MX_TIM16_Init(void)
 
   /* USER CODE END TIM16_Init 1 */
   htim16.Instance = TIM16;
-  htim16.Init.Prescaler = 23;
+  htim16.Init.Prescaler = 2399;
   htim16.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim16.Init.Period = 1000;
+  htim16.Init.Period = 2000;
   htim16.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim16.Init.RepetitionCounter = 0;
   htim16.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
@@ -467,12 +472,24 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+const char NL[] = "\r\n";
 int __io_putchar(int ch) {
-  HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 100);
+  if( ch == '\n' ){
+    HAL_UART_Transmit(&huart2, (uint8_t *)&NL, 2, 100);
+  } else {
+    HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 100);
+  }
   return ch;
 }
 
 int __io_getchar(void) {
+  uint8_t ch;                                                                                                                                                                                       
+  if( HAL_UART_Receive(&huart2, &ch, 1, 0) == HAL_OK ){
+    return ch; 
+  } else {
+    return -1;
+  }
+
 }
 
 /* USER CODE END 4 */
