@@ -7,6 +7,8 @@
 
 #include "main.h"
 #include "hall.h"
+#include "sinusoidal.h"
+
 #include "stm32f0xx_hal_gpio.h"
 
 static GPIO_TypeDef * const PORT_EN[] = {
@@ -21,13 +23,23 @@ extern TIM_HandleTypeDef htim1;
 
 // s. https://www.nxp.com/docs/en/application-note/AN4776.pdf Fig. 12
 const motor_t HALL2MOT[8] = {
-	[_011] = _C2B,
-	[_001] = _A2B,
-	[_101] = _A2C,
-	[_100] = _B2C,
-	[_110] = _B2A,
-	[_010] = _C2A,
+	[_A00] = _V2W,
+	[_AB0] = _U2W,
+	[_0B0] = _U2V,
+	[_0BC] = _W2V,
+	[_00C] = _W2U,
+	[_A0C] = _V2U
 };
+/*
+const motor_t HALL2MOT[8] = {
+	[_A00] = _UW2V,
+	[_AB0] = _W2UV,
+	[_0B0] = _VW2U,
+	[_0BC] = _V2UW,
+	[_00C] = _UV2W,
+	[_A0C] = _U2VW
+};
+*/
 
 void motorTim(){
 }
@@ -68,8 +80,8 @@ static inline void _set( uint32_t ch, mot_t mo ){
 
 void motorMot( motor_t m ){
 
-	_set( 0, m.A );
-	_set( 1, m.B );
-	_set( 2, m.C );
+	_set( 0, m.U );
+	_set( 1, m.V );
+	_set( 2, m.W );
 
 }

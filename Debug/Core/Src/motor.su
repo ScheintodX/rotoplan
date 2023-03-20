@@ -1,5 +1,0 @@
-motor.c:32:6:motorTim	8	static
-motor.c:35:6:motorInit	16	static
-motor.c:42:6:motorStart	8	static
-motor.c:53:20:_set	16	static
-motor.c:69:6:motorMot	16	static

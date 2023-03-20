@@ -5,6 +5,10 @@ OCD=$(OD)/bin/openocd
 all:
 	$(MAKE) -C Debug all
 
+.phony: nvi
+nvi: compile_commands.json
+
+
 install: all
 	$(OCD) -d2 -s $(OD)/share/openocd/scripts -f board/st_nucleo_f0.cfg -c "program {Debug/cube-test.elf}  verify reset; shutdown;"
 
@@ -13,8 +17,9 @@ install: all
 .phony: compile_commands.json
 compile_commands.json:
 	$(MAKE) -C Debug clean
-	compiledb $(MAKE) -C Debug all
-	\sed -i '/.*-I..\/Core\/Inc.*/i \ \ \ "-I/home/flo/workspace-mcu/arm/gcc-arm-none-eabi-9-2020-q2-update/arm-none-eabi/include",' $@
+	cd Debug
+	compiledb $(MAKE) all
+	sed '/.*-I..\/Core\/Inc.*/i \ \ \ "-I/home/flo/workspace-mcu/arm/gcc-arm-none-eabi-9-2020-q2-update/arm-none-eabi/include",' $@ > ../$@
 
 .phony: clean
 clean:
