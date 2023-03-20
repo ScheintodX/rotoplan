@@ -20,7 +20,7 @@ extern TIM_HandleTypeDef htim1;
 
 static int _PWR_ON = 50;
 static const int _PWR_OFF = 0;
-static int _FAC = 8;
+static int _FAC = 20;
 
 int _uvwi=0;
 //const motor_t _uvw[] = { _U2W, _V2W, _V2U, _W2U, _W2V, _U2V };
@@ -149,6 +149,7 @@ void Loop(){
 	//
 	//int si = SinusoidalWaveTable[ rabs( rot ) ];
 	
+
 	int guess = hallRotGuess( output );
 	if( false && output ){
 		printf( "%c%c%c %c%c%c %03d %04d %03d",
@@ -211,10 +212,10 @@ ppow:		printf( "Pwr: %d\n", _PWR_ON );
 		case 'x':
 			printf( "%d/%d/%d\n", tv[0], tv[1], tv[2] );
 			break;
-		case '(':
+		case ')':
 			_FAC--;
 			goto pfac;
-		case ')':
+		case '(':
 			_FAC++;
 pfac:		printf( "Fac: %d\n", _FAC );
 			break;
@@ -224,5 +225,5 @@ pfac:		printf( "Fac: %d\n", _FAC );
 
 	hallLoop();
 	
-	HAL_Delay( 5 );   /* Insert delay 100 ms */
+	HAL_Delay( 10 );   /* Insert delay 100 ms */
 }

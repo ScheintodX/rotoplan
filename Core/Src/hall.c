@@ -23,6 +23,7 @@ static hall_t _pos={0};
 static uint64_t _last[6];
 static int _speed[6];
 
+static int _theindex;
 static int _thespeed;
 static uint64_t _thelastZero;
 
@@ -88,8 +89,10 @@ void HAL_GPIO_EXTI_Callback( uint16_t pin ){
 
 		if( ok ){
 			_thespeed = sum / 6;
+			_theindex = i;
 		} else {
 			_thespeed = 0;
+			_theindex = -1;
 		}
 
 		if( i==0 ){
@@ -104,7 +107,7 @@ void HAL_GPIO_EXTI_Callback( uint16_t pin ){
 }
 
 int hallSpeed(){ 
-	return _thespeed;
+	return _speed[_theindex];
 }
 
 void hallInit(){
@@ -138,33 +141,41 @@ int hallRotGuess( bool output ){
 
 	int coarse = _POS[ hallPos().val ];
 
-	int diff = hallTime()-_thelastZero;
+	if( _theindex >= 0 ){
 
-	float x = (float)diff/_thespeed;
+		/*
+		int diff = hallTime()-_thelastZero;
 
-	int fine = 384*x;
+		float x = (float)diff/_thespeed;
 
-	int err = coarse+32 - fine;
-	if( err < 0 ) err=-err;
+		int fine = 384*x;
+		*/
+		int diff = hallTime()-_last[_theindex];
+		float x = (float)diff/_speed[_theindex];
+		int fine = coarse + x*384;
 
-	if( output ){
-		printf( "\n[%05d] % 4d/% 4d/% 4d", diff, coarse, fine, err );
+		int err = coarse+32 - fine;
+		if( err < 0 ) err=-err;
 
-		for( int i = 0; i<40; i++ ){
-			putchar( "=-"[i*10<coarse?0:1] );
+		if( output ){
+			printf( "\n[%05d] % 4d/% 4d/% 4d", diff, coarse, fine, err );
+
+			for( int i = 0; i<24; i++ ){
+				putchar( "=-"[i<<4<coarse?0:1] );
+			}
+			printf( "  " );
+			for( int i = 0; i<30; i++ ){
+				putchar( "=-"[i<<4<fine?0:1] );
+			}
+			printf( "  " );
+			for( int i = 0; i<8; i++ ){
+				putchar( "=-"[i<<4<err?0:1] );
+			}
 		}
-		printf( "  " );
-		for( int i = 0; i<48; i++ ){
-			putchar( "=-"[i*10<fine?0:1] );
-		}
-		printf( "  " );
-		for( int i = 0; i<10; i++ ){
-			putchar( "=-"[i*10<err?0:1] );
-		}
+		if( err < 64 ) return fine;
 	}
+	return coarse;
 
-	if( err < 64 ) return fine;
-	else return coarse;
 }
 
 hall_t hallPos(){
