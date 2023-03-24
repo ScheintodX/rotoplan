@@ -70,6 +70,8 @@ void Error_Handler(void);
 #define LD2_GPIO_Port GPIOA
 #define EN_DIAG_Pin GPIO_PIN_6
 #define EN_DIAG_GPIO_Port GPIOA
+#define SPD_Pin GPIO_PIN_1
+#define SPD_GPIO_Port GPIOB
 #define LD3_Pin GPIO_PIN_2
 #define LD3_GPIO_Port GPIOB
 #define H3_Pin GPIO_PIN_10

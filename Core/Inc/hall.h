@@ -68,7 +68,7 @@ void hallInit();
 hall_t hallPos();
 
 // return pos as 384 rad
-int hallRot(); //0..383rad
+int hallRotPos(); //0..383rad
 int hallRotGuess(bool); //0..383rad
 
 // return pos

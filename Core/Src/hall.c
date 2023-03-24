@@ -2,11 +2,9 @@
 #include "main.h"
 #include "blink.h"
 #include <stdio.h>
+#include "microtime.h"
 
-static uint64_t _myTime;
-
-extern TIM_HandleTypeDef htim14;
-
+#define ZERO_TIMEOUT 5000
 #define _SIXTANT 384/6 //==64
 static int _POS[8] = {
 	[0] = -1,
@@ -20,12 +18,8 @@ static int _POS[8] = {
 
 static hall_t _pos={0};
 
-static uint64_t _last[6];
-static int _speed[6];
-
-static int _theindex;
-static int _thespeed;
-static uint64_t _thelastZero;
+static int _thespeed=0;
+static uint64_t _thelast=0;
 
 static inline hall_t _readPos(){
 	hall_t res={0};
@@ -35,130 +29,63 @@ static inline hall_t _readPos(){
 	return res;
 }
 
-void HAL_GPIO_EXTI_Callback( uint16_t pin ){ 
+__weak void on_hall( int speed );
 
-	uint64_t now = hallTime();
-
-	int i, j, s, sum=0;
-	GPIO_TypeDef *pin_port = NULL;
-	uint16_t pin_no;
-		
-	blinkRED();
+void HAL_GPIO_EXTI_Callback( uint16_t pin ){
 
 	_pos = _readPos();
 
-	if( pin & H1_Pin ){
-		pin_port = H1_GPIO_Port;
-		pin_no = H1_Pin,
-		i = 0;
-	}
-	if( pin & H2_Pin ){
-		pin_port = H2_GPIO_Port;
-		pin_no = H2_Pin,
-		i = 2;
-	}
-	if( pin & H3_Pin ){
-		pin_port = H3_GPIO_Port;
-		pin_no = H3_Pin,
-		i = 4;
-	}
+	uint64_t now = utTime();
 
-	if( pin_port ){
+	if( pin & (H1_Pin|H2_Pin|H3_Pin) ){
 
-		bool val;
-		bool ok;
-
-		ok = true;
-
-		val = HAL_GPIO_ReadPin( pin_port, pin_no );
-		i += val ? 1 : 0;
-
-		if( _last[ i ] != 0 ){
-			_speed[ i ] = now - _last[ i ];
-		} 
-		_last[ i ] = now;
-
-		for( j=0; j<6; j++ ){
-
-			s = _speed[j];
-
-			if( s == 0 ) ok = false;
-
-			sum += s;
+		__disable_irq();
+		if( _thelast > 0 ){
+			_thespeed = now - _thelast;
 		}
+		_thelast = now;
+		__enable_irq();
 
-		if( ok ){
-			_thespeed = sum / 6;
-			_theindex = i;
-		} else {
-			_thespeed = 0;
-			_theindex = -1;
-		}
-
-		if( i==0 ){
-			// for speed based on time
-			if( ok ){
-				_thelastZero = now;
-			} else {
-				_thelastZero = 0;
-			}
-		}
+		on_hall( _thespeed );
 	}
+
+}
+
+hall_t hallPos(){
+	return _pos;
+}
+
+int hallRotPos(){
+	return _POS[ hallPos().val ];
 }
 
 int hallSpeed(){ 
-	return _speed[_theindex];
+	return _thespeed;
 }
 
-void hallInit(){
-	//noop. already done by main init
-	_pos = _readPos();
-
-	HAL_TIM_OC_Start( &htim14, TIM_CHANNEL_1 );
-}
-
-int hallRot(){
-
-	int rot;
-
-	/*
-	if( _thelastZero > 0 ){
-
-		int now = hallTime(), diff = now-_thelastZero;
-
-		float x = (float)diff/_thespeed;
-		rot = 384*x;
-	} else {
-		rot = _POS[ hallPos().val ];
-	}
-	*/
-		rot = _POS[ hallPos().val ];
-	return rot;
-}
-
-
+#define ISERR 64
 int hallRotGuess( bool output ){
 
+	uint64_t now = utTime();
 	int coarse = _POS[ hallPos().val ];
 
-	if( _theindex >= 0 ){
+	__disable_irq();
+	utime_t last = _thelast;
+	int speed = _thespeed;
+	__enable_irq();
 
-		/*
-		int diff = hallTime()-_thelastZero;
+	if( speed > 0 && speed < ZERO_TIMEOUT ){
 
-		float x = (float)diff/_thespeed;
-
-		int fine = 384*x;
-		*/
-		int diff = hallTime()-_last[_theindex];
-		float x = (float)diff/_speed[_theindex];
-		int fine = coarse + x*384;
+		int diff = now-last;
+		//float x = (float)diff/speed;
+		int x = diff*64/speed;
+		int fine = coarse + x;
 
 		int err = coarse+32 - fine;
-		if( err < 0 ) err=-err;
 
-		if( output ){
-			printf( "\n[%05d] % 4d/% 4d/% 4d", diff, coarse, fine, err );
+		if( err < ISERR && err > -ISERR ) return fine;
+		else if( output ){
+			printf( "\n%c[%08d] % 4d/% 4d/% 4d", " !"[err<64?0:1], diff, coarse, fine, err );
 
 			for( int i = 0; i<24; i++ ){
 				putchar( "=-"[i<<4<coarse?0:1] );
@@ -172,29 +99,22 @@ int hallRotGuess( bool output ){
 				putchar( "=-"[i<<4<err?0:1] );
 			}
 		}
-		if( err < 64 ) return fine;
 	}
 	return coarse;
-
 }
 
-hall_t hallPos(){
-	return _pos;
-}
-uint64_t hallTime(){
-	static int last=0;
-	int now = htim14.Instance->CNT;
-	uint64_t newt = _myTime + now-last;
-	if( now < last ) newt += 0x10000;
-	__disable_irq();
-	_myTime = newt;
-	__enable_irq();
-	last = now;
-	return _myTime;
+void hallInit(){
+	//noop. already done by main init
+	_pos = _readPos();
 }
 
 void hallLoop(){
 
-	// make sure it gets called at least every 6.5535 seconds
-	UNUSED( hallTime() );
+	utime_t now = utTime();
+
+	if( now-_thelast > ZERO_TIMEOUT ){
+
+		_thespeed = 0;
+		_thelast = 0;
+	}
 }

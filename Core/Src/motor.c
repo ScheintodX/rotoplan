@@ -58,6 +58,9 @@ void motorStart(){
 	__HAL_TIM_SET_COMPARE( &htim1, TIM_CHANNEL_1, 0 );
 	__HAL_TIM_SET_COMPARE( &htim1, TIM_CHANNEL_2, 0 );
 	__HAL_TIM_SET_COMPARE( &htim1, TIM_CHANNEL_3, 0 );
+	HAL_GPIO_WritePin( EN1_GPIO_Port, EN1_Pin, GPIO_PIN_SET );
+	HAL_GPIO_WritePin( EN2_GPIO_Port, EN2_Pin, GPIO_PIN_SET );
+	HAL_GPIO_WritePin( EN3_GPIO_Port, EN3_Pin, GPIO_PIN_SET );
 }
 
 int speed = 500; // 0..n..1000

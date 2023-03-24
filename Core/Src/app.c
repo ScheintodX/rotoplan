@@ -4,27 +4,20 @@
 #include "main.h"
 #include "motor.h"
 #include "blink.h"
+#include "microtime.h"
 
 #include "stm32f0xx_hal.h"
 #include "stm32f0xx_hal_exti.h"
 #include "stm32f0xx_hal_gpio.h"
 #include "stm32f0xx_hal_tim.h"
 
-#define PWM_MAX 256
-
-#define abs(x) ((x)>=0?(x):(-(x)))
-
 extern uint16_t SinusoidalWaveTable[384];
 
 extern TIM_HandleTypeDef htim1;
+extern ADC_HandleTypeDef hadc;
 
-static int _PWR_ON = 50;
-static const int _PWR_OFF = 0;
-static int _FAC = 20;
-
-int _uvwi=0;
-//const motor_t _uvw[] = { _U2W, _V2W, _V2U, _W2U, _W2V, _U2V };
-const motor_t _uvw[] = { _UW2V, _W2UV, _VW2U, _V2UW, _UV2W, _U2VW };
+static volatile int _FAC = 128;
+static bool _REV = false;
 
 static inline int rabs( int val ){
 	while( val < 0 ) val+=384;
@@ -32,8 +25,7 @@ static inline int rabs( int val ){
 	return val;
 }
 
-int tv[3];
-
+#define abs(x) ((x)<0?-(x):(x))
 
 typedef struct {
 	GPIO_PinState pin;
@@ -45,59 +37,27 @@ const _pwm_t _pinsx[] = {
 	[NEG] = { GPIO_PIN_SET, false }
 };
 
-static inline void _setMod( int idx, volatile uint32_t *reg, GPIO_TypeDef *gpio_en, int16_t pin_en, mot_t mot ){
-
-	const _pwm_t *p = &_pinsx[ mot ];
-
-	HAL_GPIO_WritePin( gpio_en, pin_en, p->pin );
-
-	int val = p->pwm ? _PWR_ON : _PWR_OFF;
-	tv[idx] = val;
-	*reg = val;
-}
-
-static inline void _setVal( int idx, volatile uint32_t *reg, GPIO_TypeDef *gpio_en, int16_t pin_en, int val ){
-
-	HAL_GPIO_WritePin( gpio_en, pin_en, GPIO_PIN_SET );
-
-	tv[idx] = val;
-	*reg = val;
-}
-
-
 void HAL_TIM_OC_DelayElapsedCallback( TIM_HandleTypeDef *tim ){
 
 	GRNon();
 
-	//int rot = hallRot();
+	//int rot = hallRotPos();
 	int rot = hallRotGuess( false );
 
-	int OFF = 0;
+	int v1 = SinusoidalWaveTable[ rabs( rot     ) ] * _FAC / 1024;
+	int v2 = SinusoidalWaveTable[ rabs( rot+128 ) ] * _FAC / 1024;
+	int v3 = SinusoidalWaveTable[ rabs( rot+256 ) ] * _FAC / 1024;
 
-	int v1 = SinusoidalWaveTable[ rabs( rot     + OFF ) ] / _FAC;
-	int v2 = SinusoidalWaveTable[ rabs( rot+128 + OFF ) ] / _FAC;
-	int v3 = SinusoidalWaveTable[ rabs( rot+256 + OFF ) ] / _FAC;
+	if( _REV ){
+		htim1.Instance->CCR1 = v1;
+		htim1.Instance->CCR2 = v2;
+		htim1.Instance->CCR3 = v3;
+	} else {
+		htim1.Instance->CCR1 = v1;
+		htim1.Instance->CCR2 = v2;
+		htim1.Instance->CCR3 = v3;
 
-	_setVal( 0, &(htim1.Instance->CCR1), EN1_GPIO_Port, EN1_Pin, v1 );
-	_setVal( 1, &(htim1.Instance->CCR2), EN2_GPIO_Port, EN2_Pin, v2 );
-	_setVal( 2, &(htim1.Instance->CCR3), EN3_GPIO_Port, EN3_Pin, v3 );
-
-
-	/*
-	hall_t pos = hallPos();
-	motor_t mot = HALL2MOT[ pos.val ];
-
-	_setMod( 0, &(htim1.Instance->CCR1), EN1_GPIO_Port, EN1_Pin, mot.U );
-	_setMod( 1, &(htim1.Instance->CCR2), EN2_GPIO_Port, EN2_Pin, mot.V );
-	_setMod( 2, &(htim1.Instance->CCR3), EN3_GPIO_Port, EN3_Pin, mot.W );
-	*/
-
-	/*
-	//motor_t mot = _uvw[ _uvwi ];
-	_setMod( 0, &(htim1.Instance->CCR1), EN1_GPIO_Port, EN1_Pin, POS );
-	_setMod( 1, &(htim1.Instance->CCR2), EN2_GPIO_Port, EN2_Pin, NC  );
-	_setMod( 2, &(htim1.Instance->CCR3), EN3_GPIO_Port, EN3_Pin, NEG );
-	*/
+	}
 
 	GRNoff();
 }
@@ -120,6 +80,7 @@ void Setup(){
 	setvbuf(stdout, NULL, _IONBF, 0);
 	setvbuf(stderr, NULL, _IONBF, 0);
 
+	utInit();
 	hallInit();
 	motorInit();
 
@@ -128,44 +89,100 @@ void Setup(){
 	HAL_TIM_PWM_Start( &htim1, TIM_CHANNEL_3 );
 
 	printf( "Hello World\n" );
+	HAL_ADC_Start(&hadc);
 	motorStart();
 }
 
 const char POS2C[] = "X.";
 const char MOT2C[] = ".HL ";
 
+#define ADC2RPM(x) (x)
+
+#define SPD_RND 8
+#define RPM_RND 4
+#define FAC_RND 4
+int spd_ring[SPD_RND], spd_i=0;
+int rpm_ring[RPM_RND], rpm_i=0;
+int fac_ring[FAC_RND], fac_i=0;
+
+
+static void rput( int *ring, int size, int *i, int val ){
+	ring[ *i ] = val;
+	*i = (*i+1) % size;
+}
+static int ravg(  int *ring, int size ){
+	int avg=0;
+	for( int i=0; i<size; i++ ){
+		avg += ring[i];
+	}
+	return avg / size;
+}
+
+static void printbar( int steps, int max, int val ){
+
+	putchar( ' ' );
+
+	if( val < 0 ) val = 0;
+	if( val > max ) val = max;
+
+	for( int i=0; i<steps; i++ ){
+		putchar( "=."[ (float)val/max*steps < i ] );
+	}
+}
+
+volatile static int rpm_avg, rpm_want, rpm_err, rpm_update;
+
+void on_hall( int speed ){
+
+	blinkRED();
+
+	// todo inc rpm_update according to speed
+
+	int rpm = speed > 0 ? 4*10000.0/speed : 0;
+	int fac;
+
+	rput( rpm_ring, RPM_RND, &rpm_i, rpm );
+	rpm_avg = ravg( rpm_ring, RPM_RND );
+
+	rpm_err = rpm_want - rpm_avg;
+
+	// tune ---
+	fac = _FAC;
+
+	rpm_update = rpm_err/8 + 8;
+	fac += rpm_update;
+	if( fac > 1024 ) fac=1024;
+	if( fac < 0 ) fac=0;
+
+	_FAC = fac;
+	// /tune ---
+}
+
 void Loop(){
 
 	static bool output = true;
 
-	hall_t pos = hallPos();
-	int rot = hallRot();
+	int spd_avg = 0;
 
 	int speed = hallSpeed();
+	int rpm = speed > 0 ? 4*10000.0/speed : 0;
 
-	//__disable_irq();
-	motor_t mot = HALL2MOT[ pos.val ];
-	//__enable_irq();
-	//
-	//int si = SinusoidalWaveTable[ rabs( rot ) ];
-	
+	//HAL_ADC_PollForConversion(&hadc, 1000);
+	int spd = HAL_ADC_GetValue( &hadc );
+	HAL_ADC_Start(&hadc);
 
-	int guess = hallRotGuess( output );
-	if( false && output ){
-		printf( "%c%c%c %c%c%c %03d %04d %03d",
-				POS2C[pos.A], POS2C[pos.B], POS2C[pos.C], 
-				MOT2C[mot.U], MOT2C[mot.V], MOT2C[mot.W],
-				rot, guess, speed );
+	rput( spd_ring, SPD_RND, &spd_i, spd );
+	spd_avg = ravg( spd_ring, SPD_RND );
 
-		for( int i = 0; i<48; i++ ){
-			putchar( "= "[i*10<rot?0:1] );
-		}
+	rpm_want = ADC2RPM( spd_avg );
+	hallRotGuess( true );
+	if( output ){
+		printf( "\n% 5d % 5d % 5d : % 5d % 5d : % 5d % 5d % 5d ", 
+				speed, rpm, rpm_avg, spd, spd_avg, rpm_err, rpm_update, _FAC );
 
-		for( int i = 0; i<48; i++ ){
-			putchar( "= "[i*10<guess?0:1] );
-		}
-
-		putchar( '\n' );
+		printbar( 100, 4000, rpm_avg );
+		printbar( 20, 200, abs( rpm_err ) );
+		printbar( 16, 1024, _FAC );
 	}
 
 	int c = readch();
@@ -180,6 +197,7 @@ void Loop(){
 			output = !output;
 			break;
 		case '0':
+		case '1':
 		case '2':
 		case '3':
 		case '4':
@@ -187,43 +205,27 @@ void Loop(){
 		case '6':
 		case '7':
 		case '8':
-			_PWR_ON = (c-'0')*10;;
-			goto ppow;
-		case '1':
-			_PWR_ON -= 10;
-			goto ppow;
-		case '9':
-			_PWR_ON += 10;
+			_FAC = (c-'0')*128;;
 			goto ppow;
 		case '!':
-			_PWR_ON = 257;
+			_FAC = 1024;
 			goto ppow;
 		case '+':
-			_PWR_ON++;
+			_FAC+=16;
 			goto ppow;
 		case '-':
-			_PWR_ON--;
-ppow:		printf( "Pwr: %d\n", _PWR_ON );
-			break;
-		case '#':
-			_uvwi = (_uvwi+1)%6;
-			printf( "(%c%c%c)\n", MOT2C[_uvw[_uvwi].U], MOT2C[_uvw[_uvwi].V], MOT2C[_uvw[_uvwi].W] );
-			break;
-		case 'x':
-			printf( "%d/%d/%d\n", tv[0], tv[1], tv[2] );
-			break;
-		case ')':
-			_FAC--;
-			goto pfac;
-		case '(':
-			_FAC++;
-pfac:		printf( "Fac: %d\n", _FAC );
+			_FAC-=16;
+ppow:		printf( "Fac: %d\n", _FAC );
 			break;
 		default:
 			putchar( c );
 	}
 
+	putchar( '.' );
 	hallLoop();
 	
-	HAL_Delay( 10 );   /* Insert delay 100 ms */
+	// make sure it gets called at least every 6.5535 seconds
+	utUpdate();
+
+	HAL_Delay( 10 );
 }
